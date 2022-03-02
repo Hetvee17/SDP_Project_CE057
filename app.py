@@ -10,7 +10,7 @@ from keras.models import load_model
 import streamlit as st
 from streamlit_lottie import st_lottie
 import requests 
-import LSTM_Prep
+
 
 app = hy.HydraApp(title='Stock Price Prediction',favicon="🐙",hide_streamlit_markers=True,use_navbar=True, navbar_sticky=True)
 
@@ -66,7 +66,8 @@ def About():
     st.write('This is the `about page` of this multi-page app.')
 
     st.write('In this app, we will be building a simple classification model using the Iris dataset.')
- 
+
+
 @app.addapp()
 def Stocks():
     option = st.sidebar.selectbox('Select one symbol', ( 'AAPL', 'MSFT',"SPY",'WMT'))
@@ -74,12 +75,19 @@ def Stocks():
     today = datetime.date.today()
     before = today - datetime.timedelta(days=700)
     start_date = st.sidebar.date_input('Start date', before)
-    end_date = st.sidebar.date_input('End date', today)
+    
+    end = today - datetime.timedelta(days=200) 
+    end_date = st.sidebar.date_input('End date', end)
+    
+    future = end_date + datetime.timedelta(days=90)
+    future_date = st.sidebar.date_input('Future date', future)
+    
     if start_date < end_date:
         st.sidebar.success('Start date: `%s`\n\nEnd date: `%s`' % (start_date, end_date))
     else:
         st.sidebar.error('Error: End date must fall after start date.')
 
+    
     #hide_menu_style = """
     #                   <style>
     #                   #MainMenu {visibility : hidden; }
@@ -96,6 +104,7 @@ def Stocks():
 
     user_input = st.text_input('Enter Stock Ticker', option)
     df = data.DataReader(user_input, 'yahoo', start_date, end_date)
+    df2 = data.DataReader(user_input, 'yahoo', end_date, future_date)
 
     #Describing Data
     st.subheader('Data')
@@ -122,19 +131,19 @@ def Stocks():
     plt.plot(ma200)
     plt.plot(df.Close)
     st.pyplot(fig)
-
-
+    
     #Spliting data into Training and Testing
-
     data_training = pd.DataFrame(df['Close'][0:int(len(df)*0.70)]) #starting from 0th index to 70% of the total values
     data_testing = pd.DataFrame(df['Close'][int(len(df)*0.70) : int(len(df))])
-
+    data_future = pd.DataFrame(df2['Close'])
+    
     from sklearn.preprocessing import MinMaxScaler
     scaler = MinMaxScaler(feature_range=(0,1))
 
     data_training_array = scaler.fit_transform(data_training)
-
-
+    future_array = scaler.fit_transform(data_future)
+    future_array = np.array(future_array)
+    
     #Load my Model
     model = load_model('keras_model.h5')
 
@@ -157,6 +166,11 @@ def Stocks():
     scale_factor = 1/scaler[0]
     y_predicted = y_predicted * scale_factor
     y_test = y_test * scale_factor
+    
+    #Future Predicition
+    pred_future = model.predict(future_array)
+    pred_future = pred_future * scale_factor
+
 
     #Final Graph
     st.subheader('Predictions vs Original')
@@ -168,27 +182,13 @@ def Stocks():
     plt.legend(loc='best')
     st.pyplot(fig2)
     
-    split = 0.8
-    sequence_length = 60
+    #Final Graph for Future Predictions
+    st.subheader('Future')
+    fig3 = plt.figure(figsize=(12,6))
+    plt.plot(pred_future, 'g', label = 'Future Predicted Price')
+    plt.xlabel('Time')
+    plt.ylabel('Price')
+    plt.legend(loc='best')
+    st.pyplot(fig3)
     
-    
-    data_prep = LSTM_Prep.pd.DataFrame(dataset = df)
-    rnn_df = data_prep.preprocess_rnn(date_colname = 'date', numeric_colname = 'perc', pred_set_timesteps = 60)
-
-
-    series_prep = LSTM_Prep.Series_Prep(rnn_df =  rnn_df, numeric_colname = 'perc')
-    window, X_min, X_max = series_prep.make_window(sequence_length = sequence_length, 
-                                                train_test_split = split, 
-                                                return_original_x = True)
-
-    x_train, x_test, y_train, y_test = series_prep.reshape_window(window, train_test_split = split)
-
-    future = LSTM_Prep.Predict_Future(x_test  = x_test, lstm_model = model)
-    # Checking its accuracy on our training set
-    #future.predicted_vs_actual(X_min = X_min, X_max = X_max, numeric_colname = 'perc')
-    # Predicting 'x' timesteps out
-    future.predict_future(X_min = X_min, X_max = X_max, numeric_colname = 'perc', timesteps_to_predict = 15, return_future = True)
-
-
-    #Run the whole lot, we get navbar, state management and app isolation, all with this tiny amount of work.
 app.run()
